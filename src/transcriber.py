@@ -16,7 +16,12 @@ def transcribe_audio(audio_path: str):
 
     log("Starting transcription...")
 
-    segments, info = model.transcribe(audio_path, beam_size=5)
+    segments, info = model.transcribe(
+    audio_path,
+    beam_size=5,
+    language="hi",
+    task="transcribe"
+    )
 
     transcript_data = []
 
