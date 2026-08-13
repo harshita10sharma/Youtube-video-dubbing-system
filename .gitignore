@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+
+# Generated runtime data
+data/videos/
+data/audio/
+data/output/
+data/transcripts/
+logs/
