@@ -1,0 +1,6 @@
+yt-dlp
+faster-whisper
+torch
+deep-translator
+edge-tts
+pydub
