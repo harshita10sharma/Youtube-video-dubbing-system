@@ -5,7 +5,14 @@ from faster_whisper import WhisperModel
 
 from src.logger import log
 
-MODEL_SIZE = "base"
+MODEL_SIZE = "small"  # "base" is too weak to reliably pick Devanagari over Urdu script
+
+# This Devanagari sample text "primes" the decoder to continue writing
+# in Devanagari script instead of drifting into Urdu/Perso-Arabic script.
+# It doesn't have to match the video's actual content - it's just there
+# to bias the model's script choice.
+HINDI_SCRIPT_PROMPT = "यह एक हिंदी भाषण है। कहानी, ज़िंदगी, दुनिया, समझ।"
+
 
 def transcribe_audio(audio_path: str):
     Path("data/transcripts").mkdir(parents=True, exist_ok=True)
@@ -17,22 +24,28 @@ def transcribe_audio(audio_path: str):
     log("Starting transcription...")
 
     segments, info = model.transcribe(
-    audio_path,
-    beam_size=5,
-    language="hi",
-    task="transcribe"
+        audio_path,
+        beam_size=5,
+        language="hi",
+        task="transcribe",
+        vad_filter=True,
+        initial_prompt=HINDI_SCRIPT_PROMPT,
     )
 
     transcript_data = []
 
     for segment in segments:
+        text = segment.text.strip()
+        if not text:
+            continue
         transcript_data.append(
             {
                 "start": round(segment.start, 2),
                 "end": round(segment.end, 2),
-                "text": segment.text.strip(),
+                "text": text,
             }
         )
+        print(f"      [{segment.start:7.1f}s -> {segment.end:7.1f}s] {text}")
 
     output_path = "data/transcripts/transcript.json"
 
@@ -42,4 +55,4 @@ def transcribe_audio(audio_path: str):
     log(f"Detected language: {info.language}")
     log(f"Transcript saved -> {output_path}")
 
-    return transcript_data
+    return transcript_data, info.language
