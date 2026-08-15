@@ -5,15 +5,16 @@ from faster_whisper import WhisperModel
 
 from src.logger import log
 
-MODEL_SIZE = "small"  # "base" is too weak to reliably pick Devanagari over Urdu script
+MODEL_SIZE = "medium"  # "base" is too weak to reliably pick Devanagari over Urdu script
 
 # This Devanagari sample text "primes" the decoder to continue writing
 # in Devanagari script instead of drifting into Urdu/Perso-Arabic script.
 # It doesn't have to match the video's actual content - it's just there
 # to bias the model's script choice.
-HINDI_SCRIPT_PROMPT = "यह एक हिंदी भाषण है। कहानी, ज़िंदगी, दुनिया, समझ।"
-
-
+HINDI_SCRIPT_PROMPT = (
+    "यह एक हिंदी भाषण है। यह कहानी, ज़िंदगी, दुनिया, समझ, "
+    "दोस्तों, बातचीत, और लोगों के बारे में है।"
+)
 def transcribe_audio(audio_path: str):
     Path("data/transcripts").mkdir(parents=True, exist_ok=True)
 
@@ -24,13 +25,14 @@ def transcribe_audio(audio_path: str):
     log("Starting transcription...")
 
     segments, info = model.transcribe(
-        audio_path,
-        beam_size=5,
-        language="hi",
-        task="transcribe",
-        vad_filter=True,
-        initial_prompt=HINDI_SCRIPT_PROMPT,
-    )
+    audio_path,
+    beam_size=5,
+    language="hi",
+    task="transcribe",
+    vad_filter=True,
+    initial_prompt=HINDI_SCRIPT_PROMPT,
+    condition_on_previous_text=False,
+)
 
     transcript_data = []
 
