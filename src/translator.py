@@ -3,9 +3,13 @@ translator.py
 -------------
 Worker 4: translates transcript segments from the detected
 source language into natural English.
+
 Before translation, short Whisper segments are merged into larger
 sentence-level chunks so the translator has enough context to produce
 more natural, meaning-based English.
+
+Indic languages supported by IndicTrans2 are routed through
+IndicTrans2. Other languages use the general GoogleTranslator.
 
 Timestamps are preserved from the original transcript.
 """
@@ -62,21 +66,47 @@ def merge_short_segments(
     return merged
 
 
+def _get_indic_translator():
+    """
+    Import IndicTrans2 only when an Indic language is detected.
+
+    This keeps the heavy IndicTrans2 dependencies from being loaded
+    for non-Indic videos.
+    """
+
+    from src.indic_translator import (
+        IndicTranslator,
+        is_indic_language,
+    )
+
+    return IndicTranslator, is_indic_language
+
+
 def translate_segments(
     segments,
     source_language: str,
     max_retries: int = 3,
 ):
     """
-    Translate transcript segments from the source language to English.
+    Translate transcript segments from the detected source language
+    into English.
 
-    Short/fragmented Whisper segments are merged first so that translation
-    receives enough context to produce more natural, meaning-based English.
+    Indic languages supported by IndicTrans2 use IndicTrans2.
+    Other languages use GoogleTranslator.
+
+    Short/fragmented Whisper segments are merged first so that
+    translation receives enough context.
     """
 
-    Path("data/transcripts").mkdir(parents=True, exist_ok=True)
+    Path("data/transcripts").mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    # Merge fragmented segments before translation.
+    # ---------------------------------------------------------
+    # Merge fragmented Whisper segments
+    # ---------------------------------------------------------
+
     original_count = len(segments)
 
     segments = merge_short_segments(segments)
@@ -86,6 +116,40 @@ def translate_segments(
         f"into {len(segments)} translation chunks."
     )
 
+    # ---------------------------------------------------------
+    # Check whether the detected language is Indic
+    # ---------------------------------------------------------
+
+    _, is_indic_language = _get_indic_translator()
+
+    if is_indic_language(source_language):
+
+        log(
+            f"Detected Indic language '{source_language}'. "
+            f"Using IndicTrans2 for translation."
+        )
+
+        IndicTranslator, _ = _get_indic_translator()
+
+        translator = IndicTranslator()
+
+        segments = translator.translate_segments(
+            segments,
+            source_language=source_language,
+            batch_size=8,
+        )
+
+        # Save translated result.
+        _save_checkpoint(segments)
+
+        log("IndicTrans2 translation complete.")
+
+        return segments
+
+    # ---------------------------------------------------------
+    # General-language translation
+    # ---------------------------------------------------------
+
     translator = GoogleTranslator(
         source=source_language,
         target="en",
@@ -93,7 +157,7 @@ def translate_segments(
 
     log(
         f"Translating {len(segments)} segments "
-        f"({source_language} -> en)..."
+        f"({source_language} -> en) using general translator..."
     )
 
     for i, segment in enumerate(segments):
