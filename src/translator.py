@@ -1,8 +1,8 @@
 """
 translator.py
 -------------
-Worker 4: translates Hindi transcript segments into natural English.
-
+Worker 4: translates transcript segments from the detected
+source language into natural English.
 Before translation, short Whisper segments are merged into larger
 sentence-level chunks so the translator has enough context to produce
 more natural, meaning-based English.
