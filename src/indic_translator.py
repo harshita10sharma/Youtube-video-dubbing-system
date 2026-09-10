@@ -1,6 +1,5 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from IndicTransToolkit.processor import IndicProcessor
 
 
 MODEL_NAME = "ai4bharat/indictrans2-indic-en-dist-200M"
@@ -45,6 +44,11 @@ class IndicTranslator:
         self.device = device or (
             "cuda" if torch.cuda.is_available() else "cpu"
         )
+
+        # IndicTransToolkit requires a C++ build toolchain on Windows and
+        # is only needed once an Indic language is actually detected, so
+        # it is imported here rather than at module load time.
+        from IndicTransToolkit.processor import IndicProcessor
 
         self.processor = IndicProcessor(inference=True)
 
