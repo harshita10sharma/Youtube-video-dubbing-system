@@ -11,6 +11,7 @@ Only the audio is replaced.
 import subprocess
 from pathlib import Path
 
+from src.ffmpeg_utils import get_ffmpeg_path
 from src.logger import log, log_error
 
 
@@ -36,7 +37,7 @@ def merge_audio_with_video(
     )
 
     command = [
-        "ffmpeg",
+        get_ffmpeg_path(),
         "-y",
         "-i",
         video_path,

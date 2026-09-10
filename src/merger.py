@@ -15,7 +15,13 @@ from pathlib import Path
 from pydub import AudioSegment
 from pydub.effects import speedup
 
+from src.ffmpeg_utils import get_ffmpeg_path, get_ffprobe_path
 from src.logger import log, log_error
+
+# pydub shells out to ffmpeg/ffprobe by name, which is not reliably
+# resolvable on every Windows PATH. Point it at the resolved binaries.
+AudioSegment.converter = get_ffmpeg_path()
+AudioSegment.ffprobe = get_ffprobe_path()
 
 
 OUTPUT_PATH = "data/audio/dubbed_audio.wav"

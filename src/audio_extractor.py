@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 
+from src.ffmpeg_utils import get_ffmpeg_path
 from src.logger import log
 
 def extract_audio(video_path: str) -> str:
@@ -9,7 +10,7 @@ def extract_audio(video_path: str) -> str:
     output_audio = "data/audio/original.wav"
 
     command = [
-        "ffmpeg",
+        get_ffmpeg_path(),
         "-y",
         "-i", video_path,
         "-vn",
