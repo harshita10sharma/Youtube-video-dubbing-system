@@ -1,6 +1,7 @@
 from pathlib import Path
 from yt_dlp import YoutubeDL
 
+from src.ffmpeg_utils import get_ffmpeg_path
 from src.logger import log
 
 def download_video(url: str) -> str:
@@ -11,6 +12,8 @@ def download_video(url: str) -> str:
         "outtmpl": "data/videos/source.%(ext)s",
         "merge_output_format": "mp4",
         "quiet": True,
+        "overwrites": True,
+        "ffmpeg_location": get_ffmpeg_path(),
         "progress_hooks": [_progress_hook],
     }
 
