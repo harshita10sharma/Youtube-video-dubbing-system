@@ -5,7 +5,7 @@ from faster_whisper import WhisperModel
 
 from src.logger import log
 
-MODEL_SIZE = "medium"
+MODEL_SIZE = "small"
 
 
 def transcribe_audio(audio_path: str):
