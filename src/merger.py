@@ -4,19 +4,24 @@ merger.py
 Worker 6: places generated TTS clips onto the original video timeline.
 
 Each TTS clip is positioned using the original segment's start timestamp.
-If the generated speech is longer than the original segment duration,
-the speech is sped up slightly so that it fits inside that segment.
+If the generated speech is longer than its segment it may use the silent
+gap before the next segment; if still too long it is sped up (capped at
+1.5x) and only trimmed as a last resort. See src/timing.py.
 
-This prevents overlapping speech between consecutive segments.
+This prevents overlapping speech between consecutive segments without
+cutting words off.
 """
 
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 from pydub import AudioSegment
-from pydub.effects import speedup
 
 from src.ffmpeg_utils import get_ffmpeg_path, get_ffprobe_path
 from src.logger import log, log_error
+from src.timing import available_window_ms, plan_fit
 
 # pydub shells out to ffmpeg/ffprobe by name, which is not reliably
 # resolvable on every Windows PATH. Point it at the resolved binaries.
@@ -27,40 +32,57 @@ AudioSegment.ffprobe = get_ffprobe_path()
 OUTPUT_PATH = "data/audio/dubbed_audio.wav"
 
 
-def _fit_audio_to_duration(audio, target_duration_ms):
+def _stretch(audio, speed):
     """
-    Fit a TTS clip inside its original segment duration.
+    Speed a clip up without changing pitch, using ffmpeg's atempo filter.
 
-    If the TTS clip is already short enough, it is returned unchanged.
-
-    If it is longer than the available segment duration, its playback
-    speed is increased so that it fits without overlapping the next
-    segment.
+    atempo is a proper time-stretch and sounds much cleaner than
+    pydub's chunk-based speedup, which produces audible artifacts.
     """
 
-    if target_duration_ms <= 0:
-        return audio
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "in.wav")
+        dst = os.path.join(tmp, "out.wav")
 
-    if len(audio) <= target_duration_ms:
-        return audio
+        audio.export(src, format="wav")
 
-    required_speed = len(audio) / target_duration_ms
-
-    # Only speed up when the adjustment is reasonable.
-    # Avoid extreme speed changes that would make the speech unnatural.
-    if required_speed <= 1.35:
-        audio = speedup(
-            audio,
-            playback_speed=required_speed,
-            chunk_size=150,
-            crossfade=25,
+        result = subprocess.run(
+            [
+                get_ffmpeg_path(),
+                "-y", "-i", src,
+                "-filter:a", f"atempo={speed:.4f}",
+                dst,
+            ],
+            capture_output=True,
+            text=True,
         )
 
-    # Make absolutely sure the clip does not exceed its segment.
-    if len(audio) > target_duration_ms:
-        audio = audio[:target_duration_ms]
+        if result.returncode != 0:
+            raise RuntimeError(f"atempo failed:\n{result.stderr[-400:]}")
 
-    return audio
+        return AudioSegment.from_file(dst)
+
+
+def _fit_audio(audio, window_ms):
+    """
+    Fit a TTS clip into the time window available to it.
+
+    Uses timing.plan_fit: keep as-is when it fits (including borrowing
+    the silent gap after the segment), otherwise speed up (capped) and
+    only as a last resort trim with a short fade-out.
+    """
+
+    speed, trim_ms = plan_fit(len(audio), window_ms)
+
+    if speed > 1.0:
+        audio = _stretch(audio, speed)
+
+    was_trimmed = trim_ms is not None and len(audio) > trim_ms
+
+    if was_trimmed:
+        audio = audio[:trim_ms].fade_out(min(80, trim_ms))
+
+    return audio, was_trimmed
 
 
 def merge_tts_audio(segments, video_duration: float):
@@ -96,6 +118,8 @@ def merge_tts_audio(segments, video_duration: float):
     )
 
     successful = 0
+    sped_up = 0
+    trimmed = 0
 
     log(
         f"Creating English audio timeline "
@@ -135,13 +159,21 @@ def merge_tts_audio(segments, video_duration: float):
                 )
                 continue
 
-            # Fit generated speech inside the original segment window.
+            window_ms = available_window_ms(
+                segments,
+                i,
+                len(timeline),
+            )
+
             original_audio_duration = len(audio)
 
-            audio = _fit_audio_to_duration(
-                audio,
-                target_duration_ms,
-            )
+            audio, was_trimmed = _fit_audio(audio, window_ms)
+
+            if len(audio) < original_audio_duration:
+                sped_up += 1
+
+            if was_trimmed:
+                trimmed += 1
 
             if len(audio) < original_audio_duration:
                 print(
@@ -192,6 +224,11 @@ def merge_tts_audio(segments, video_duration: float):
 
     log(
         f"Audio timeline created -> {output_path}"
+    )
+
+    log(
+        f"Timing report: {sped_up} clips sped up, "
+        f"{trimmed} clips hit the speed cap and were trimmed."
     )
 
     log(

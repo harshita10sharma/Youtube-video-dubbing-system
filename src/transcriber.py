@@ -7,6 +7,41 @@ from src.logger import log
 
 MODEL_SIZE = "small"
 
+# Loaded once and reused across calls (loading is slow).
+_model = None
+
+
+def _pick_device():
+    """GPU with float16 when CUDA is available, else CPU with int8."""
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda", "float16"
+    except ImportError:
+        pass
+
+    return "cpu", "int8"
+
+
+def _get_model():
+    global _model
+
+    if _model is None:
+        device, compute_type = _pick_device()
+        log(
+            f"Loading Faster-Whisper model: {MODEL_SIZE} "
+            f"({device}, {compute_type})"
+        )
+        _model = WhisperModel(
+            MODEL_SIZE,
+            device=device,
+            compute_type=compute_type,
+        )
+
+    return _model
+
 
 def transcribe_audio(audio_path: str):
     """
@@ -25,12 +60,7 @@ def transcribe_audio(audio_path: str):
 
     Path("data/transcripts").mkdir(parents=True, exist_ok=True)
 
-    log(f"Loading Faster-Whisper model: {MODEL_SIZE}")
-
-    model = WhisperModel(
-        MODEL_SIZE,
-        compute_type="int8"
-    )
+    model = _get_model()
 
     log("Starting transcription with automatic language detection...")
 

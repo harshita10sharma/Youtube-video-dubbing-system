@@ -8,3 +8,5 @@ data/audio/
 data/output/
 data/transcripts/
 logs/
+.pytest_cache/
+*.ipynb_checkpoints/

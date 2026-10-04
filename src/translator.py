@@ -20,6 +20,7 @@ from pathlib import Path
 
 from deep_translator import GoogleTranslator
 
+from src.languages import is_indic_language
 from src.logger import log, log_error
 
 
@@ -66,22 +67,6 @@ def merge_short_segments(
     return merged
 
 
-def _get_indic_translator():
-    """
-    Import IndicTrans2 only when an Indic language is detected.
-
-    This keeps the heavy IndicTrans2 dependencies from being loaded
-    for non-Indic videos.
-    """
-
-    from src.indic_translator import (
-        IndicTranslator,
-        is_indic_language,
-    )
-
-    return IndicTranslator, is_indic_language
-
-
 def translate_segments(
     segments,
     source_language: str,
@@ -120,8 +105,6 @@ def translate_segments(
     # Check whether the detected language is Indic
     # ---------------------------------------------------------
 
-    _, is_indic_language = _get_indic_translator()
-
     if is_indic_language(source_language):
 
         log(
@@ -129,7 +112,8 @@ def translate_segments(
             f"Using IndicTrans2 for translation."
         )
 
-        IndicTranslator, _ = _get_indic_translator()
+        # Heavy imports (torch / transformers) happen only here.
+        from src.indic_translator import IndicTranslator
 
         translator = IndicTranslator()
 

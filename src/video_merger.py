@@ -5,7 +5,8 @@ Worker 7: combines the original video with the generated
 synchronized English audio track.
 
 The video stream is copied without re-encoding.
-Only the audio is replaced.
+Only the audio is replaced (and loudness-normalised to -16 LUFS so
+cloned-voice clips of varying level sound consistent).
 """
 
 import subprocess
@@ -15,7 +16,7 @@ from src.ffmpeg_utils import get_ffmpeg_path
 from src.logger import log, log_error
 
 
-OUTPUT_PATH = "data/output/dubbed_video.mp4"
+OUTPUT_PATH = "data/output/final_dubbed_video.mp4"
 
 
 def merge_audio_with_video(
@@ -49,8 +50,12 @@ def merge_audio_with_video(
         "1:a:0",
         "-c:v",
         "copy",
+        "-af",
+        "loudnorm=I=-16:TP=-1.5:LRA=11",
         "-c:a",
         "aac",
+        "-b:a",
+        "192k",
         "-shortest",
         str(output_path),
     ]

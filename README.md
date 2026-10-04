@@ -44,12 +44,14 @@ YouTube URL
    v
 [6] merger.py           -> pydub places each clip at its original segment's
    |                       start timestamp on a silent timeline the length of
-   |                       the source video, speeding up clips that overrun
-   |                       their segment (data/audio/dubbed_audio.wav)
+   |                       the source video, borrowing the silent gap or
+   |                       speeding up (atempo) clips that overrun
+   |                       (data/audio/dubbed_audio.wav)
    v
 [7] video_merger.py     -> ffmpeg copies the original video stream and mixes
-   |                       in the new audio track as AAC, without re-encoding
-   |                       video (data/output/dubbed_video.mp4)
+   |                       in the new audio track as AAC (loudness-
+   |                       normalised), video not re-encoded
+   |                       (data/output/final_dubbed_video.mp4)
    v
 Final dubbed video
 ```
@@ -66,7 +68,7 @@ the final output path.
 | Transcription + language detection | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
 | Translation (Indic languages) | [IndicTrans2](https://github.com/AI4Bharat/IndicTrans2) via IndicTransToolkit |
 | Translation (all other languages) | [deep-translator](https://github.com/nidhaloff/deep-translator) (Google Translate backend) |
-| Speech synthesis | [edge-tts](https://github.com/rany2/edge-tts) (`en-US-AriaNeural`) |
+| Speech synthesis | [edge-tts](https://github.com/rany2/edge-tts) (`en-US-AriaNeural`); optional [Chatterbox](https://github.com/resemble-ai/chatterbox) voice cloning |
 | Timeline alignment | [pydub](https://github.com/jiaaro/pydub) |
 
 ## Installation
@@ -102,16 +104,17 @@ your system `PATH` directly.
 ## Usage
 
 ```bash
-python app.py
+python app.py                                   # prompts for a YouTube URL
+python app.py --url "https://www.youtube.com/watch?v=..."
+python app.py --video data/videos/source.mp4 --resume   # reuse earlier work
+
+# Voice cloning (GPU; see the Colab section)
+python app.py --video data/videos/source.mp4     --tts-backend chatterbox --reference-voice data/audio/reference.wav
 ```
 
-You will be prompted for a YouTube URL:
-
-```
-Enter YouTube URL: https://www.youtube.com/watch?v=...
-```
-
-The final dubbed video is written to `data/output/dubbed_video.mp4`.
+The final dubbed video is written to `data/output/final_dubbed_video.mp4`.
+Logs are also appended to `logs/pipeline.log`. Run the tests with
+`python -m pytest`.
 
 ## Language Detection
 
@@ -138,28 +141,40 @@ Original segment timestamps are preserved through translation.
 
 ## TTS Architecture
 
-`tts_engine.py` generates one English audio clip per translated segment using
-Microsoft Edge's neural TTS (`en-US-AriaNeural`), a free, natural-sounding
-voice. Each clip is saved independently so a failure on one segment does not
-block the rest.
+`tts_engine.py` generates one English audio clip per translated segment. Two
+backends are available:
+
+- `edge` (default): Microsoft Edge neural TTS (`en-US-AriaNeural`), free and
+  runs on any machine.
+- `chatterbox`: voice cloning from a reference WAV (GPU recommended). Retries
+  once on failure and frees GPU memory between clips.
+
+Each clip is saved independently so a failure on one segment does not block
+the rest, and with `--resume` existing clips are reused.
 
 ## Timestamp Alignment
 
 `merger.py` builds a silent audio track the length of the source video and
-overlays each TTS clip at its original segment's start time. If a generated
-clip is longer than the time available before the next segment starts, it is
-sped up (up to 1.35x, using pydub's crossfaded `speedup`) to fit without
-overlapping into the next segment; if it still doesn't fit, it is truncated.
-This is a practical, timestamp-preserving approach — it does not guarantee
-frame-perfect lip sync, since TTS output duration naturally differs from the
-original speech duration.
+overlays each TTS clip at its original segment's start time. The fitting
+rules live in `timing.py` and are tried in order so words are never cut off
+unnecessarily:
+
+1. The clip fits its own segment: unchanged.
+2. The clip may use the silent gap before the next segment starts: unchanged.
+3. Still too long: sped up with ffmpeg's pitch-preserving `atempo` filter,
+   capped at 1.5x.
+4. Still too long after the cap: trimmed with a short fade-out (last resort).
+
+A timing report (clips sped up / trimmed) is logged. This preserves
+timestamps but does not guarantee frame-perfect lip sync, since TTS duration
+naturally differs from the original speech.
 
 ## Final Video Generation
 
 `video_merger.py` combines the original video with the generated English
 audio track using FFmpeg: the video stream is copied unchanged (`-c:v copy`,
-no re-encoding), and the new audio is encoded as AAC. `-shortest` caps the
-output at the shorter of the two streams.
+no re-encoding), and the new audio is encoded as AAC. The audio is loudness-normalised to -16 LUFS so clips of varying level sound
+consistent, and `-shortest` caps the output at the shorter of the two streams.
 
 ## Output Location
 
@@ -167,32 +182,34 @@ output at the shorter of the two streams.
 - Translated transcript: `data/transcripts/translated.json`
 - Per-segment TTS clips: `data/audio/tts/`
 - Assembled English audio track: `data/audio/dubbed_audio.wav`
-- **Final dubbed video: `data/output/dubbed_video.mp4`**
+- **Final dubbed video: `data/output/final_dubbed_video.mp4`**
+- Log: `logs/pipeline.log`
 
 None of these runtime artifacts are committed to the repository (see
 `.gitignore`) since they are large, regenerable outputs.
 
-## Colab Chatterbox Reference
+## Running on Google Colab (voice cloning)
 
-`Colab_notebook/Chatterbox_Production_Integration_Test.ipynb` is a separate,
-previously validated Colab pipeline that used Chatterbox TTS with a reference
-voice sample to produce a higher-fidelity dub of a Hindi TEDx talk, including
-voice-timbre matching to the original speaker. It demonstrates that the same
-download → transcribe → translate → synthesize → align → mux architecture
-produces a good result with a different TTS backend. It is kept as a
-reference artifact and is not part of the local pipeline in this repository,
-which uses Edge TTS as recommended by the assignment.
+`Colab_notebook/Dubbing_Pipeline_Colab.ipynb` runs this repository on a free
+Colab T4 GPU with the Chatterbox backend: it clones the repo, installs
+dependencies, takes a reference voice and a video, runs
+`app.py --tts-backend chatterbox`, plays quality-check excerpts and downloads
+the final video.
+
+`Colab_notebook/Chatterbox_Production_Integration_Test.ipynb` is the earlier,
+self-contained experiment that produced a voice-cloned dub of a Hindi TEDx
+talk. It is kept as a reference; its timeline step truncated clips to their
+segment length (70 of 90 segments differed by more than 1 s), which the
+`timing.py` rules above replace.
 
 ## Known Limitations
 
 - Generated speech duration does not always match the original segment
-  duration exactly; segments that run long are sped up (capped at 1.35x) or
-  truncated rather than perfectly time-stretched, so timing is close but not
-  frame-accurate.
+  duration; clips borrow silent gaps or are sped up (capped at 1.5x), so
+  timing is close but not frame-accurate.
 - A single fixed English voice (`en-US-AriaNeural`) is used for the entire
   video; the system does not distinguish between multiple speakers or clone
-  the original speaker's voice locally (this exists only in the separate
-  Colab Chatterbox reference).
+  the original speaker's voice unless the Chatterbox backend is used.
 - Translation quality for non-Indic languages depends on Google Translate via
   `deep-translator`; it is generally accurate for meaning but is a
   general-purpose translator rather than one tuned to any specific language
@@ -215,24 +232,28 @@ outputs, and processing times.
 
 ```
 Youtube-video-dubbing-system/
-├── app.py                       # Pipeline entry point
+├── app.py                       # Pipeline entry point (CLI)
 ├── requirements.txt
+├── tests/                       # pytest unit tests
 ├── src/
 │   ├── downloader.py             # yt-dlp video download
 │   ├── audio_extractor.py        # ffmpeg audio extraction
 │   ├── transcriber.py            # Faster-Whisper transcription + language detection
 │   ├── translator.py             # Translation routing + segment merging
 │   ├── indic_translator.py       # IndicTrans2 backend for Indic languages
-│   ├── tts_engine.py             # Edge TTS speech synthesis
+│   ├── tts_engine.py             # Edge TTS / Chatterbox speech synthesis
+│   ├── timing.py                 # Rules for fitting clips into time slots
+│   ├── languages.py              # Language-code tables (no heavy imports)
 │   ├── merger.py                 # Timestamp-based audio timeline alignment
 │   ├── video_merger.py           # ffmpeg audio/video muxing
 │   ├── ffmpeg_utils.py           # Shared ffmpeg/ffprobe path resolution
-│   └── logger.py                 # Timestamped console logging
+│   └── logger.py                 # Console + file logging
 ├── data/                         # Runtime artifacts (git-ignored)
 │   ├── videos/
 │   ├── audio/
 │   ├── transcripts/
 │   └── output/
 └── Colab_notebook/
-    └── Chatterbox_Production_Integration_Test.ipynb   # Chatterbox reference pipeline
+    ├── Dubbing_Pipeline_Colab.ipynb                    # GPU runner for this repo
+    └── Chatterbox_Production_Integration_Test.ipynb   # Earlier Chatterbox experiment
 ```

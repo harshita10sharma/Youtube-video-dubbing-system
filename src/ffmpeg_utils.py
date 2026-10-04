@@ -67,3 +67,26 @@ def get_ffmpeg_path() -> str:
 
 def get_ffprobe_path() -> str:
     return _resolve("ffprobe", "ffprobe.exe")
+
+
+def get_media_duration(media_path: str) -> float:
+    """Return the duration of an audio/video file in seconds (via ffprobe)."""
+
+    import subprocess
+
+    result = subprocess.run(
+        [
+            get_ffprobe_path(),
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            media_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed:\n{result.stderr}")
+
+    return float(result.stdout.strip())

@@ -1,34 +1,10 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
+from src.languages import INDIC_LANGUAGE_CODES, is_indic_language  # noqa: F401
+
 
 MODEL_NAME = "ai4bharat/indictrans2-indic-en-dist-200M"
-
-INDIC_LANGUAGE_CODES = {
-    "as": "asm_Beng",
-    "bn": "ben_Beng",
-    "brx": "brx_Deva",
-    "doi": "doi_Deva",
-    "gom": "gom_Deva",
-    "gu": "guj_Gujr",
-    "hi": "hin_Deva",
-    "kn": "kan_Knda",
-    "ks": "kas_Arab",
-    "mai": "mai_Deva",
-    "ml": "mal_Mlym",
-    "mr": "mar_Deva",
-    "mni": "mni_Mtei",
-    "ne": "npi_Deva",
-    "or": "ory_Orya",
-    "pa": "pan_Guru",
-    "sa": "san_Deva",
-    "sat": "sat_Olck",
-    "sd": "snd_Arab",
-    "ta": "tam_Taml",
-    "te": "tel_Telu",
-    "ur": "urd_Arab",
-}
-
 
 class IndicTranslator:
     """
@@ -202,9 +178,3 @@ class IndicTranslator:
             )
 
         return translated_segments
-
-
-def is_indic_language(language):
-    """Return True if the Whisper language is supported by IndicTrans2."""
-
-    return language in INDIC_LANGUAGE_CODES

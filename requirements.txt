@@ -1,9 +1,19 @@
+# Core pipeline
 yt-dlp
 faster-whisper
-torch
 deep-translator
 edge-tts
 pydub
+
+# Indic translation (IndicTrans2)
+torch
 transformers
 sentencepiece
 IndicTransToolkit
+
+# Voice cloning (optional, GPU recommended) - only for --tts-backend chatterbox
+# chatterbox-tts
+# torchaudio
+
+# Tests
+pytest
