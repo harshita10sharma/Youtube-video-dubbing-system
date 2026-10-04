@@ -130,6 +130,13 @@ The source language is never hardcoded. `transcriber.py` uses
 Faster-Whisper's built-in language detection during transcription, and that
 detected language code drives which translation backend is used.
 
+The Whisper model adapts to the hardware: `large-v3` on a GPU (much better
+for Hindi and other Indian languages) and `small` on CPU. Set the
+`WHISPER_MODEL` environment variable to override. If IndicTrans2 cannot load
+(for example an incompatible `transformers` version), translation falls back
+to Google Translate instead of failing; the Colab notebook pins
+`transformers==4.46.3` for this reason.
+
 ## Translation Architecture
 
 `translator.py` first merges short, fragmented Whisper segments into

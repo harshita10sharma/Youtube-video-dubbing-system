@@ -1,11 +1,17 @@
 import json
+import os
 from pathlib import Path
 
 from faster_whisper import WhisperModel
 
 from src.logger import log
 
-MODEL_SIZE = "small"
+# "small" keeps CPU runs practical; on a GPU the much more accurate
+# "large-v3" is fast enough (a T4 transcribes 15 minutes in ~2-3 minutes)
+# and noticeably better for Hindi and other Indian languages.
+# Override with the WHISPER_MODEL environment variable.
+CPU_MODEL_SIZE = "small"
+GPU_MODEL_SIZE = "large-v3"
 
 # Loaded once and reused across calls (loading is slow).
 _model = None
@@ -30,12 +36,15 @@ def _get_model():
 
     if _model is None:
         device, compute_type = _pick_device()
+        model_size = os.environ.get("WHISPER_MODEL") or (
+            GPU_MODEL_SIZE if device == "cuda" else CPU_MODEL_SIZE
+        )
         log(
-            f"Loading Faster-Whisper model: {MODEL_SIZE} "
+            f"Loading Faster-Whisper model: {model_size} "
             f"({device}, {compute_type})"
         )
         _model = WhisperModel(
-            MODEL_SIZE,
+            model_size,
             device=device,
             compute_type=compute_type,
         )

@@ -112,23 +112,31 @@ def translate_segments(
             f"Using IndicTrans2 for translation."
         )
 
-        # Heavy imports (torch / transformers) happen only here.
-        from src.indic_translator import IndicTranslator
+        try:
+            # Heavy imports (torch / transformers) happen only here.
+            from src.indic_translator import IndicTranslator
 
-        translator = IndicTranslator()
+            translated = IndicTranslator().translate_segments(
+                segments,
+                source_language=source_language,
+                batch_size=8,
+            )
 
-        segments = translator.translate_segments(
-            segments,
-            source_language=source_language,
-            batch_size=8,
-        )
+        except Exception as e:
+            # A broken IndicTrans2 install (e.g. an incompatible
+            # transformers version) should not kill the whole dub.
+            log_error(
+                f"IndicTrans2 unavailable ({e}). "
+                f"Falling back to Google Translate."
+            )
 
-        # Save translated result.
-        _save_checkpoint(segments)
+        else:
+            # Save translated result.
+            _save_checkpoint(translated)
 
-        log("IndicTrans2 translation complete.")
+            log("IndicTrans2 translation complete.")
 
-        return segments
+            return translated
 
     # ---------------------------------------------------------
     # General-language translation
