@@ -43,6 +43,39 @@ def _get_model():
     return _model
 
 
+def _load_audio(audio_path: str):
+    """
+    Read our 16 kHz mono 16-bit WAV straight into a float32 array.
+
+    Faster-Whisper accepts a numpy array instead of a file path. Reading
+    the WAV ourselves avoids its PyAV-based decoder, which fails with
+    "open() got an unexpected keyword argument 'metadata_errors'" when an
+    older PyAV is installed (a dependency conflict seen on Colab).
+    Falls back to the path for any other audio format.
+    """
+
+    import wave
+
+    try:
+        import numpy as np
+
+        with wave.open(audio_path, "rb") as wav:
+            if (
+                wav.getframerate() != 16000
+                or wav.getnchannels() != 1
+                or wav.getsampwidth() != 2
+            ):
+                return audio_path
+
+            frames = wav.readframes(wav.getnframes())
+
+        samples = np.frombuffer(frames, dtype=np.int16)
+        return samples.astype(np.float32) / 32768.0
+
+    except (ImportError, wave.Error, EOFError):
+        return audio_path
+
+
 def transcribe_audio(audio_path: str):
     """
     Transcribe audio and automatically detect the source language.
@@ -65,7 +98,7 @@ def transcribe_audio(audio_path: str):
     log("Starting transcription with automatic language detection...")
 
     segments, info = model.transcribe(
-        audio_path,
+        _load_audio(audio_path),
         beam_size=5,
         task="transcribe",
         vad_filter=True,
