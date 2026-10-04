@@ -15,5 +15,8 @@ IndicTransToolkit
 # chatterbox-tts
 # torchaudio
 
+# Web interface (optional) - python web_app.py
+# gradio
+
 # Tests
 pytest

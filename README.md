@@ -108,8 +108,16 @@ python app.py                                   # prompts for a YouTube URL
 python app.py --url "https://www.youtube.com/watch?v=..."
 python app.py --video data/videos/source.mp4 --resume   # reuse earlier work
 
-# Voice cloning (GPU; see the Colab section)
-python app.py --video data/videos/source.mp4     --tts-backend chatterbox --reference-voice data/audio/reference.wav
+# Voice cloning (GPU): clones the speaker heard in the video automatically
+python app.py --video data/videos/source.mp4 --tts-backend chatterbox
+
+# ...or clone a specific voice sample instead
+python app.py --video data/videos/source.mp4 --tts-backend chatterbox \
+    --reference-voice data/audio/reference.wav
+
+# Web interface (paste a URL, confirm the voice sample, get the video)
+pip install gradio
+python web_app.py
 ```
 
 The final dubbed video is written to `data/output/final_dubbed_video.mp4`.
@@ -148,6 +156,20 @@ backends are available:
   runs on any machine.
 - `chatterbox`: voice cloning from a reference WAV (GPU recommended). Retries
   once on failure and frees GPU memory between clips.
+
+### Choosing the voice to clone
+
+The reference voice comes from the video itself (`voice_reference.py`). It
+measures loudness in 100 ms frames, scores every 12-second window for mostly
+continuous speech with steady loudness (music, applause and crowd noise make
+loudness jump), and cuts the three best non-overlapping windows from the
+original video at 24 kHz. This takes about a second and needs no model.
+
+- Command line: the best sample is used automatically.
+- Web interface (`web_app.py`): the user listens to the samples, picks one
+  (or uploads their own), and presses one button to create the dubbed video.
+
+One voice is used for the whole video; multiple speakers are not separated.
 
 Each clip is saved independently so a failure on one segment does not block
 the rest, and with `--resume` existing clips are reused.
@@ -190,11 +212,17 @@ None of these runtime artifacts are committed to the repository (see
 
 ## Running on Google Colab (voice cloning)
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/harshita10sharma/Youtube-video-dubbing-system/blob/main/Colab_notebook/Dubbing_Pipeline_Colab.ipynb)
+
 `Colab_notebook/Dubbing_Pipeline_Colab.ipynb` runs this repository on a free
-Colab T4 GPU with the Chatterbox backend: it clones the repo, installs
-dependencies, takes a reference voice and a video, runs
-`app.py --tts-backend chatterbox`, plays quality-check excerpts and downloads
-the final video.
+Colab T4 GPU: it clones the repo, installs dependencies and starts the web
+interface (`web_app.py`) with a public link. The user pastes a YouTube URL,
+listens to the speaker voice samples found in the video, confirms one, and
+receives the dubbed video. A command-line cell is included as an alternative.
+
+Everyone who opens the notebook uses **their own** Colab GPU session; nothing
+runs on the author's account. YouTube sometimes blocks downloads from Colab,
+so the web page also accepts an uploaded video file.
 
 `Colab_notebook/Chatterbox_Production_Integration_Test.ipynb` is the earlier,
 self-contained experiment that produced a voice-cloned dub of a Hindi TEDx
@@ -232,7 +260,8 @@ outputs, and processing times.
 
 ```
 Youtube-video-dubbing-system/
-├── app.py                       # Pipeline entry point (CLI)
+├── app.py                       # Pipeline entry point (CLI) and stage functions
+├── web_app.py                   # Gradio interface: URL -> confirm voice -> dubbed video
 ├── requirements.txt
 ├── tests/                       # pytest unit tests
 ├── src/
@@ -243,6 +272,7 @@ Youtube-video-dubbing-system/
 │   ├── indic_translator.py       # IndicTrans2 backend for Indic languages
 │   ├── tts_engine.py             # Edge TTS / Chatterbox speech synthesis
 │   ├── timing.py                 # Rules for fitting clips into time slots
+│   ├── voice_reference.py        # Finds clean speaker samples for voice cloning
 │   ├── languages.py              # Language-code tables (no heavy imports)
 │   ├── merger.py                 # Timestamp-based audio timeline alignment
 │   ├── video_merger.py           # ffmpeg audio/video muxing

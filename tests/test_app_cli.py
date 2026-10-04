@@ -23,8 +23,11 @@ def test_defaults():
     assert args.tts_backend == "edge" and not args.resume
 
 
-def test_chatterbox_requires_reference_voice():
-    assert main(["--video", "x.mp4", "--tts-backend", "chatterbox"]) == 2
+def test_chatterbox_reference_voice_is_optional():
+    args = build_parser().parse_args(
+        ["--video", "x.mp4", "--tts-backend", "chatterbox"]
+    )
+    assert args.reference_voice is None
 
 
 def test_missing_video_fails_cleanly():

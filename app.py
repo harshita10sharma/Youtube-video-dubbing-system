@@ -13,13 +13,19 @@ Pipeline:
 7. Replace original video audio
 8. Save final dubbed video
 
+The work is split into two stages so a user interface can pause between
+them (see web_app.py):
+    prepare_source() + find_reference_voices()   -> pick the speaker's voice
+    dub_video()                                  -> everything else
+
 Usage
 -----
     python app.py                      # prompts for a YouTube URL
     python app.py --url "https://www.youtube.com/watch?v=XXXX"
     python app.py --video data/videos/source.mp4 --resume
-    python app.py --video data/videos/source.mp4 \
-        --tts-backend chatterbox --reference-voice data/audio/reference.wav
+    python app.py --video data/videos/source.mp4 --tts-backend chatterbox
+        (clones the speaker heard in the video; add --reference-voice FILE
+         to use a specific voice sample instead)
 
 Heavy dependencies (Whisper, IndicTrans2, Chatterbox) are imported only
 when the stage that needs them runs.
@@ -57,7 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--reference-voice",
-        help="Reference WAV for the chatterbox backend.",
+        help=(
+            "Reference WAV for the chatterbox backend "
+            "(default: taken automatically from the speaker in the video)."
+        ),
     )
     parser.add_argument(
         "--resume",
@@ -73,31 +82,53 @@ def _load_json(path: Path):
         return json.load(f)
 
 
-def run_pipeline(args):
-    """Run all stages. Returns (final_video_path, source_language)."""
+def prepare_source(url=None, video=None):
+    """Stage A: get the video and extract its audio. Returns (video, audio)."""
 
     from src.audio_extractor import extract_audio
-    from src.ffmpeg_utils import get_media_duration
 
-    # Step 1: video -------------------------------------------------
-    if args.url:
+    if url:
         from src.downloader import download_video
 
         log("STEP 1/7: Downloading video...")
-        video_path = download_video(args.url)
+        video_path = download_video(url)
     else:
-        video_path = args.video
+        video_path = video
         log(f"STEP 1/7: Using local video {video_path}")
 
         if not Path(video_path).exists():
             raise FileNotFoundError(f"Video not found: {video_path}")
 
-    # Step 2: audio -------------------------------------------------
     log("STEP 2/7: Extracting audio...")
     audio_path = extract_audio(video_path)
 
+    return video_path, audio_path
+
+
+def find_reference_voices(video_path, audio_path, top_n=3):
+    """Cut clean samples of the original speaker out of the video."""
+
+    from src.voice_reference import extract_reference_candidates
+
+    return extract_reference_candidates(video_path, audio_path, top_n=top_n)
+
+
+def dub_video(
+    video_path,
+    audio_path,
+    tts_backend="edge",
+    reference_voice=None,
+    resume=False,
+):
+    """
+    Stage B: transcribe, translate, speak, align and mux.
+    Returns (final_video_path, source_language).
+    """
+
+    from src.ffmpeg_utils import get_media_duration
+
     # Steps 3-4: transcript + translation ---------------------------
-    if args.resume and TRANSLATED_PATH.exists() and LANGUAGE_PATH.exists():
+    if resume and TRANSLATED_PATH.exists() and LANGUAGE_PATH.exists():
         log("STEP 3-4/7: Resuming - reusing existing translation.")
         segments = _load_json(TRANSLATED_PATH)
         source_language = LANGUAGE_PATH.read_text(encoding="utf-8").strip()
@@ -126,9 +157,9 @@ def run_pipeline(args):
     log("STEP 5/7: Generating English speech...")
     segments = create_tts_files(
         segments,
-        backend=args.tts_backend,
-        reference_voice=args.reference_voice,
-        overwrite=not args.resume,
+        backend=tts_backend,
+        reference_voice=reference_voice,
+        overwrite=not resume,
     )
 
     if not any(s.get("tts_path") for s in segments):
@@ -144,17 +175,32 @@ def run_pipeline(args):
     from src.video_merger import merge_audio_with_video
 
     log("STEP 7/7: Creating final dubbed video...")
-    final_video = merge_audio_with_video(video_path, dubbed_audio)
+    return merge_audio_with_video(video_path, dubbed_audio), source_language
 
-    return final_video, source_language
+
+def run_pipeline(args):
+    """Run every stage (CLI). Returns (final_video_path, source_language)."""
+
+    video_path, audio_path = prepare_source(args.url, args.video)
+
+    reference = args.reference_voice
+
+    if args.tts_backend == "chatterbox" and not reference:
+        # No voice supplied: clone the speaker heard in the video itself.
+        reference = find_reference_voices(video_path, audio_path, top_n=1)[0]
+        log(f"Using automatically selected speaker voice: {reference}")
+
+    return dub_video(
+        video_path,
+        audio_path,
+        tts_backend=args.tts_backend,
+        reference_voice=reference,
+        resume=args.resume,
+    )
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-
-    if args.tts_backend == "chatterbox" and not args.reference_voice:
-        log_error("--reference-voice is required with --tts-backend chatterbox")
-        return 2
 
     if not args.url and not args.video:
         print("=" * 70)
